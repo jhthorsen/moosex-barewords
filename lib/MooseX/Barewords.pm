@@ -12,7 +12,6 @@ This module has modified code from L<subs::auto>.
 
  package Foo;
 
- use Moose;
  use MooseX::Barewords;
 
  has foo => (
@@ -20,15 +19,22 @@ This module has modified code from L<subs::auto>.
     isa => 'Str',
  );
 
- method my_method => sub {
+ bmethod my_method => sub {
     print self->foo; # this will always return the attribute value
     print foo;       # will print whatever $self->foo holds
                      # unless 'foo' is set in argument list
  };
 
+ bmethod add => sub {
+    print a + b;
+ }
+
  # this will make 'foo' bareword return 42 instead of
  # what $self->foo holds.
  $self->my_method(foo => 42); 
+
+ # will print 43
+ $self->add(a => 42, b => 1);
 
 =cut
 
@@ -46,15 +52,15 @@ our %_ARGS;
 our %_PACKAGES;
 
 Moose::Exporter->setup_import_methods(
-    with_caller => [qw/has method self/],
+    with_caller => [qw/has bmethod self/],
     also        => 'Moose',
 );
 
 =head1 FUNCTIONS
 
-=head2 method
+=head2 bmethod
 
- method $name => sub { ... };
+ bmethod $name => sub { ... };
 
 This will create a method, which can use barewords to access either
 variables from parameter list or object attribute values.
@@ -63,7 +69,7 @@ See L<SYNOPSIS> for more information.
 
 =cut
 
-sub method {
+sub bmethod {
     my $class = shift;
     my $name  = shift;
     my $sub   = shift;
@@ -140,7 +146,7 @@ sub has {
 
  $self = self;
 
-Will return the current object, inside a L<method()>.
+Will return the current object, inside a L<bmethod()>.
 
 =cut
 

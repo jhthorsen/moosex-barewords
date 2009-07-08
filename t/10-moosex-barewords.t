@@ -3,7 +3,7 @@
 use Test::More tests => 5;
 
 require_ok("MooseX::Barewords");
-can_ok("MooseX::Barewords", qw/method/);
+can_ok("MooseX::Barewords", qw/bmethod/);
 
 create_test_class() or die $@;
 
@@ -23,15 +23,15 @@ sub create_test_class {
         
         has foo => ( is => 'ro', isa => 'Int' );
 
-        method test => sub {
+        bmethod test => sub {
             return a + b;
         };
 
-        method get_foo => sub {
+        bmethod get_foo => sub {
             return foo;
         };
 
-        method get_foo_override => sub {
+        bmethod get_foo_override => sub {
             return foo + self->foo;
         };
     ];
