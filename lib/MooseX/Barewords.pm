@@ -27,7 +27,11 @@ This module has modified code from L<subs::auto>.
 
  bmethod add => sub {
     print a + b;
- }
+ };
+
+ bmethod add_nums => qw/a b/, sub {
+    print a + b;
+ };
 
  # this will make 'foo' bareword return 42 instead of
  # what $self->foo holds.
@@ -35,12 +39,14 @@ This module has modified code from L<subs::auto>.
 
  # will print 43
  $self->add(a => 42, b => 1);
+ $self->add_nums(42, 1);
 
 =cut
 
 use Moose ();
 use Moose::Exporter;
 use Moose::Util::MetaRole;
+use List::MoreUtils qw/zip/;
 use Symbol qw/gensym/;
 use Variable::Magic qw/wizard cast dispell getdata/;
 use constant DATA => 1;
@@ -60,23 +66,32 @@ Moose::Exporter->setup_import_methods(
 =head2 bmethod
 
  bmethod $name => sub { ... };
+ bmethod $name => qw/foo bar/, sub { ... };
 
 This will create a method, which can use barewords to access either
 variables from parameter list or object attribute values.
 
-See L<SYNOPSIS> for more information.
+See L<SYNOPSIS> for details.
 
 =cut
 
 sub bmethod {
     my $class = shift;
     my $name  = shift;
-    my $sub   = shift;
+    my $sub   = pop;
+    my @args  = @_;
     my $meta  = $class->meta;
 
     $class->meta->add_method($name => sub {
         my $self = shift;
-        my $args = @_ == 1 ? $_[0] : {@_};
+        my $args;
+
+        if(@args) {
+            $args = { zip @args, @_ };
+        }
+        else {
+            $args = @_ == 1 ? $_[0] : {@_};
+        }
 
         local %_ARGS;
         local $_SELF = $self;
