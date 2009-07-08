@@ -22,7 +22,11 @@ SYNOPSIS
 
      bmethod add => sub {
         print a + b;
-     }
+     };
+
+     bmethod add_nums => qw/a b/, sub {
+        print a + b;
+     };
 
      # this will make 'foo' bareword return 42 instead of
      # what $self->foo holds.
@@ -30,15 +34,17 @@ SYNOPSIS
 
      # will print 43
      $self->add(a => 42, b => 1);
+     $self->add_nums(42, 1);
 
 FUNCTIONS
   bmethod
      bmethod $name => sub { ... };
+     bmethod $name => qw/foo bar/, sub { ... };
 
     This will create a method, which can use barewords to access either
     variables from parameter list or object attribute values.
 
-    See SYNOPSIS for more information.
+    See SYNOPSIS for details.
 
   has
      has $name => %args;
