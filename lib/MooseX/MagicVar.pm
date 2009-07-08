@@ -2,7 +2,7 @@ package MooseX::MagicVar;
 
 =head1 NAME
 
-MooseX::MagicVar
+MooseX::MagicVar - Does magical stuff with barewords in Moose methods
 
 =head1 DESCRIPTION
 
@@ -20,110 +20,46 @@ This module has modified code from L<subs::auto>.
     isa => 'Str',
  );
 
- method mymethod => sub {
-    # ...
+ method my_method => sub {
+    print self->foo; # this will always return the attribute value
+    print foo;       # will print whatever $self->foo holds
+                     # unless 'foo' is set in argument list
  };
+
+ # this will make 'foo' bareword return 42 instead of
+ # what $self->foo holds.
+ $self->my_method(foo => 42); 
 
 =cut
 
-use Moose;
+use Moose ();
+use Moose::Exporter;
+use Moose::Util::MetaRole;
 use Symbol qw/gensym/;
 use Variable::Magic qw/wizard cast dispell getdata/;
 use constant DATA => 1;
 use constant FUNC => 2;
 
+our $VERSION = "0.01";
 our $_SELF;
 our %_ARGS;
 our %_PACKAGES;
 
-my %core = corelist_map();
-my $tag  = wizard(data => sub { 1 });
-my $wiz  = wizard(
-               data  => sub { +{ pkg => $_[1], guard => 0 } },
-               fetch => \&_fetch,
-               store => \&_store,
-           );
-
-#CHECK {
-#    no warnings 'void';
-#    no strict 'refs';
-#    dispell %{"$_\::"}, $wiz for keys %_PACKAGES;
-#}
-
-# $wiz->_store($data, $Str)
-sub _store {
-    return if($_[DATA]->{'guard'});
-    local $_[DATA]->{'guard'} = 1;
-    _reset($_[DATA]->{'pkg'}, $_[FUNC]);
-    return;
-}
-
-# $wiz->_fetch($data, $Str)
-sub _fetch {
-    return if($_[DATA]->{'guard'});
-    return if($_[FUNC] =~ /::/);
-    return if(exists $core{$_[FUNC]});
-
-    local $_[DATA]->{'guard'} = 1;
-
-    my $hints = (caller 0)[10];
-    my $func  = $_[FUNC];
-
-    if($hints and $hints->{'subs__auto'}) {
-        my $mod = "$func.pm";
-        if(not exists $INC{$mod}) {
-            my $fqn = $_[DATA]->{'pkg'} . '::' . $func;
-            if(do { no strict 'refs'; not *$fqn{CODE} || *$fqn{IO}}) {
-                my $cb = sub () {
-                    return $_SELF->$func(@_) if(@_ and blessed shift);
-                    return $_ARGS{$func};
-                };
-                cast &$cb, $tag;
-                no strict 'refs';
-                *$fqn = $cb;
-            }
-        }
-    }
-    else {
-        _reset($_[DATA]->{'pkg'}, $func);
-    }
-
-    return;
-}
-
-# _reset($pkg, $func);
-sub _reset {
-    my ($pkg, $func) = @_;
-    my $fqn = join '::', @_;
-    my $cb = do {
-        no strict 'refs';
-        no warnings 'once';
-        *$fqn{CODE};
-    };
-    if ($cb and getdata(&$cb, $tag)) {
-        no strict 'refs';
-        my $sym = gensym;
-        for (qw/SCALAR ARRAY HASH IO FORMAT/) {
-            no warnings 'once';
-            *$sym = *$fqn{$_} if defined *$fqn{$_}
-        }
-        undef *$fqn;
-        *$fqn = *$sym;
-    }
-}
-
-# $bool = _is_bareword($fqn);
-sub _is_bareword {
-    my $fqn = $_[0];
-    no strict 'refs';
-    return ! (*$fqn{'CODE'} || *$fqn{'IO'});
-}
+Moose::Exporter->setup_import_methods(
+    with_caller => [qw/has method self/],
+    also        => 'Moose',
+);
 
 =head1 FUNCTIONS
 
 =head2 method
 
  method $name => sub { ... };
+
+This will create a method, which can use barewords to access either
+variables from parameter list or object attribute values.
+
+See L<SYNOPSIS> for more information.
 
 =cut
 
@@ -145,75 +81,179 @@ sub method {
     });
 }
 
+=head2 has
+
+ has $name => %args;
+
+Same as L<Moose::has()>, but with some extra sugar to make barewords work
+as expected.
+
+Accessors will be prefixed with "__"
+
 =cut
 
-sub _attr_to_constant {
+sub has {
+    my $class = shift;
+    my $name  = shift;
+
+    if(@_ % 2 == 1) {
+        Moose->throw_error('Usage: has \'name\' => ( key => value, ... )');
+    }
+
+    my %options  = ( definition_context => Moose::Util::_caller_info(), @_ );
+    my $attrs    = ref($name) eq 'ARRAY' ? $name : [ $name ];
+    my $accessor = "__$name";
+
+    if($options{'is'}) {
+        if(!exists $options{'reader'} or !exists $options{'writer'}) {
+
+            if(!exists $options{'writer'} and $options{'is'} eq 'rw') {
+                $options{'writer'} = $accessor;
+            }
+            if(!exists $options{'reader'}) {
+                $options{'reader'} ||= $accessor;
+            }
+
+            no strict 'refs';
+            *{"$class\::$name"} = sub {
+                if(Scalar::Util::blessed($_[0])) {
+                    return shift->$accessor(@_);
+                }
+                else {
+                    return exists $_ARGS{$name} ? $_ARGS{$name}
+                         :                        $_SELF->$accessor;
+                }
+            };
+        }
+    }
+
+    delete $options{'is'};
+
+    for(@$attrs) {
+        Class::MOP::Class->initialize($class)->add_attribute( $_, %options );
+    }
+
+    return;
 }
 
-sub _arg_to_constant {
-    my $self = shift;
-    my $name = shift;
-    my $args = shift;
+=head2 self
 
-    for(0..HERE) {
-        warn "$_ => ", (caller $_)[2];
-    }
+ $self = self;
 
-    warn "$self => $name => $args->{$name}\n";
+Will return the current object, inside a L<method()>.
 
-    if($self->can($name)) {
-        localize $name => sub {
-            warn $name, $args->{$name};
-            #return shift->$name(@_) if(@_);
-            return $args->{$name};
-        } => SCOPE 2;
-    }
-    else {
-        localize $name => sub {
-            warn $name, $args->{$name};
-            $args->{$name}
-        } => SCOPE 2;
-    }
+=cut
+
+sub self {
+    return $_SELF;
 }
 
+=head2 init_meta
+
+ $class->init_meta(%options);
+
+Called on C<import()>. Will set up L<Variable::Magic> on caller package and
+turn all barewords into subs.
+
 =cut
 
-=head2 import
-
- $class->import;
-
-Will export C<self()> and C<method()>.
-
-=cut
-
-sub import {
-    my $class  = shift;
-    my $caller = caller;
-
-    return if($caller eq 'main');
+sub init_meta {
+    my $class   = shift;
+    my %options = @_;
+    my $caller  = $options{'for_class'};
 
     $_PACKAGES{$caller}++;
-    no strict 'refs';
 
-    # export method() and self()
-    *{"$caller\::method"} = sub { method($caller, @_) };
-    *{"$caller\::self"} = sub { $_SELF };
+    no strict 'refs';
 
     # turn barewords into functions
     $^H{'subs__auto'} = 1;
 
     # do Variable::Magic on caller namespace
-    cast %{"$caller\::"}, $wiz, $caller;
+    cast %{"$caller\::"}, init_wizard(), $caller;
 }
 
-=head2 unimport
+=head1 INTERNAL FUNCTIONS
 
- $class->unimport;
+=head2 init_wizard
+
+ $wiz = init_wizard();
+
+Will return a L<Variable::Magic> wizard, used on caller package.
 
 =cut
 
-sub unimport {
-    $^H{'subs__auto'} = 0;
+sub init_wizard {
+    my $tag  = wizard(data => sub { 1 });
+    my %core = corelist_map();
+
+    # $reset->($pkg, $func);
+    my $reset = sub {
+        my ($pkg, $func) = @_;
+        my $fqn = join '::', @_;
+        my $cb = do {
+            no strict 'refs';
+            no warnings 'once';
+            *$fqn{CODE};
+        };
+        if($cb and getdata(&$cb, $tag)) {
+            no strict 'refs';
+            my $sym = gensym;
+            for (qw/SCALAR ARRAY HASH IO FORMAT/) {
+                no warnings 'once';
+                *$sym = *$fqn{$_} if defined *$fqn{$_}
+            }
+            undef *$fqn;
+            *$fqn = *$sym;
+        }
+    };
+
+    my $wizard = wizard(
+        data  => sub { +{ pkg => $_[1], guard => 0 } },
+        store => sub {
+            return if($_[DATA]->{'guard'});
+            local $_[DATA]->{'guard'} = 1;
+            $reset->($_[DATA]->{'pkg'}, $_[FUNC]);
+            return;
+        },
+        fetch => sub {
+            return if($_[DATA]->{'guard'});
+            return if($_[FUNC] =~ /::/);
+            return if(exists $core{$_[FUNC]});
+
+            local $_[DATA]->{'guard'} = 1;
+
+            my $hints = (caller 0)[10];
+            my $func  = $_[FUNC];
+
+            if($hints and $hints->{'subs__auto'}) {
+                my $mod = "$func.pm";
+                if(not exists $INC{$mod}) {
+                    my $fqn = $_[DATA]->{'pkg'} . '::' . $func;
+                    if(do { no strict 'refs'; not *$fqn{CODE} || *$fqn{IO}}) {
+                        my $cb = sub () {
+                            if(@_ and Scalar::Util::blessed(shift)) {
+                                return $_SELF->$func(@_) 
+                            }
+                            else {
+                                return $_ARGS{$func};
+                            }
+                        };
+                        cast &$cb, $tag;
+                        no strict 'refs';
+                        *$fqn = $cb;
+                    }
+                }
+            }
+            else {
+                $reset->($_[DATA]->{'pkg'}, $func);
+            }
+
+            return;
+        },
+    );
+
+    return $wizard;
 }
 
 =head2 corelist_map
