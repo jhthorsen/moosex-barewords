@@ -1,0 +1,69 @@
+NAME
+    MooseX::Barewords - Does magical stuff with barewords in Moose methods
+
+DESCRIPTION
+    This module has modified code from subs::auto.
+
+SYNOPSIS
+     package Foo;
+
+     use Moose;
+     use MooseX::Barewords;
+
+     has foo => (
+        is => 'ro',
+        isa => 'Str',
+     );
+
+     method my_method => sub {
+        print self->foo; # this will always return the attribute value
+        print foo;       # will print whatever $self->foo holds
+                         # unless 'foo' is set in argument list
+     };
+
+     # this will make 'foo' bareword return 42 instead of
+     # what $self->foo holds.
+     $self->my_method(foo => 42);
+
+FUNCTIONS
+  method
+     method $name => sub { ... };
+
+    This will create a method, which can use barewords to access either
+    variables from parameter list or object attribute values.
+
+    See SYNOPSIS for more information.
+
+  has
+     has $name => %args;
+
+    Same as Moose::has(), but with some extra sugar to make barewords work
+    as expected.
+
+    Accessors will be prefixed with "__"
+
+  self
+     $self = self;
+
+    Will return the current object, inside a method().
+
+  init_meta
+     $class->init_meta(%options);
+
+    Called on "import()". Will set up Variable::Magic on caller package and
+    turn all barewords into subs.
+
+INTERNAL FUNCTIONS
+  init_wizard
+     $wiz = init_wizard();
+
+    Will return a Variable::Magic wizard, used on caller package.
+
+  corelist_map
+     %corelist = corelist_map();
+
+    Returns a hash, where the keys are the names of the core functions.
+
+AUTHOR
+    Jan Henning Thorsen
+
