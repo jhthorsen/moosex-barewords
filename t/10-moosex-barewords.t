@@ -2,8 +2,8 @@
 
 use Test::More tests => 5;
 
-require_ok("MooseX::MagicVar");
-can_ok("MooseX::MagicVar", qw/method/);
+require_ok("MooseX::Barewords");
+can_ok("MooseX::Barewords", qw/method/);
 
 create_test_class() or die $@;
 
@@ -19,8 +19,7 @@ sub create_test_class {
     eval q[
         package Test::Class;
 
-        use Moose;
-        use MooseX::MagicVar;
+        use MooseX::Barewords;
         
         has foo => ( is => 'ro', isa => 'Int' );
 

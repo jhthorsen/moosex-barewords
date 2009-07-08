@@ -1,8 +1,8 @@
-package MooseX::MagicVar;
+package MooseX::Barewords;
 
 =head1 NAME
 
-MooseX::MagicVar - Does magical stuff with barewords in Moose methods
+MooseX::Barewords - Does magical stuff with barewords in Moose methods
 
 =head1 DESCRIPTION
 
@@ -13,7 +13,7 @@ This module has modified code from L<subs::auto>.
  package Foo;
 
  use Moose;
- use MooseX::MagicVar;
+ use MooseX::Barewords;
 
  has foo => (
     is => 'ro',
