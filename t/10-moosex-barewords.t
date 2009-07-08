@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 5;
+use Test::More tests => 7;
 
 require_ok("MooseX::Barewords");
 can_ok("MooseX::Barewords", qw/bmethod/);
@@ -13,6 +13,9 @@ is($obj->foo, 42, "foo attribute is set");
 is($obj->test(a => 1, b => 2), 3, "a + b is set");
 is($obj->get_foo, 42, "get_foo() returned correct value");
 is($obj->get_foo_override(foo => 2), 42 + 2, "foo is overridden");
+
+eval { $obj->test };
+like($@, qr{a is not defined}, "test() failed without args");
 
 #=============================================================================
 sub create_test_class {

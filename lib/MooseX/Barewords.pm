@@ -49,7 +49,6 @@ use constant FUNC => 2;
 our $VERSION = "0.01";
 our $_SELF;
 our %_ARGS;
-our %_PACKAGES;
 
 Moose::Exporter->setup_import_methods(
     with_caller => [qw/has bmethod self/],
@@ -79,11 +78,12 @@ sub bmethod {
         my $self = shift;
         my $args = @_ == 1 ? $_[0] : {@_};
 
-        $_ARGS{$_} = $args->{$_} for keys %$args;
-
+        local %_ARGS;
         local $_SELF = $self;
 
-        return $sub->(@_);
+        $_ARGS{$_} = $args->{$_} for keys %$args;
+
+        return $self->$sub(@_);
     });
 }
 
@@ -168,14 +168,11 @@ sub init_meta {
     my %options = @_;
     my $caller  = $options{'for_class'};
 
-    $_PACKAGES{$caller}++;
-
-    no strict 'refs';
-
     # turn barewords into functions
     $^H{'subs__auto'} = 1;
 
     # do Variable::Magic on caller namespace
+    no strict 'refs';
     cast %{"$caller\::"}, init_wizard(), $caller;
 }
 
@@ -193,33 +190,12 @@ sub init_wizard {
     my $tag  = wizard(data => sub { 1 });
     my %core = corelist_map();
 
-    # $reset->($pkg, $func);
-    my $reset = sub {
-        my ($pkg, $func) = @_;
-        my $fqn = join '::', @_;
-        my $cb = do {
-            no strict 'refs';
-            no warnings 'once';
-            *$fqn{CODE};
-        };
-        if($cb and getdata(&$cb, $tag)) {
-            no strict 'refs';
-            my $sym = gensym;
-            for (qw/SCALAR ARRAY HASH IO FORMAT/) {
-                no warnings 'once';
-                *$sym = *$fqn{$_} if defined *$fqn{$_}
-            }
-            undef *$fqn;
-            *$fqn = *$sym;
-        }
-    };
-
     my $wizard = wizard(
         data  => sub { +{ pkg => $_[1], guard => 0 } },
         store => sub {
             return if($_[DATA]->{'guard'});
             local $_[DATA]->{'guard'} = 1;
-            $reset->($_[DATA]->{'pkg'}, $_[FUNC]);
+            _reset($tag, $_[DATA]->{'pkg'}, $_[FUNC]);
             return;
         },
         fetch => sub {
@@ -230,29 +206,25 @@ sub init_wizard {
             local $_[DATA]->{'guard'} = 1;
 
             my $hints = (caller 0)[10];
+            my $pkg   = $_[DATA]->{'pkg'};
             my $func  = $_[FUNC];
+            my $mod   = "$func.pm";
 
             if($hints and $hints->{'subs__auto'}) {
-                my $mod = "$func.pm";
                 if(not exists $INC{$mod}) {
-                    my $fqn = $_[DATA]->{'pkg'} . '::' . $func;
-                    if(do { no strict 'refs'; not *$fqn{CODE} || *$fqn{IO}}) {
-                        my $cb = sub () {
-                            if(@_ and Scalar::Util::blessed(shift)) {
-                                return $_SELF->$func(@_) 
-                            }
-                            else {
-                                return $_ARGS{$func};
-                            }
-                        };
-                        cast &$cb, $tag;
-                        no strict 'refs';
-                        *$fqn = $cb;
-                    }
+                    no strict 'refs';
+                    my $fqn = $pkg . '::' . $func;
+                    *$fqn{'CODE'} || *$fqn{'IO'} and return;
+                    my $cb = sub () {
+                        return $_ARGS{$func} if(exists $_ARGS{$func});
+                        Carp::confess "$func is not defined";
+                    };
+                    cast &$cb, $tag;
+                    *$fqn = $cb;
                 }
             }
             else {
-                $reset->($_[DATA]->{'pkg'}, $func);
+                _reset($tag, $pkg, $func);
             }
 
             return;
@@ -260,6 +232,24 @@ sub init_wizard {
     );
 
     return $wizard;
+}
+
+# _reset($tag, $pkg, $func);
+sub _reset {
+    my $tag = shift;
+    my $fqn = join '::', @_;
+    my $cb  = do { no strict 'refs'; no warnings 'once'; *$fqn{'CODE'} };
+
+    return unless($cb and getdata(&$cb, $tag));
+
+    no strict 'refs';
+    my $sym = gensym;
+
+    for(qw/SCALAR ARRAY HASH IO FORMAT/) {
+        *$sym = *$fqn{$_} if defined *$fqn{$_}
+    }
+
+    *$fqn = *$sym;
 }
 
 =head2 corelist_map
