@@ -2,7 +2,7 @@ package MooseX::Barewords;
 
 =head1 NAME
 
-MooseX::Barewords - Does magical stuff with barewords in Moose methods
+MooseX::Barewords - Turn barewords into attr/arg getters
 
 =head1 DESCRIPTION
 
@@ -14,24 +14,17 @@ This module has modified code from L<subs::auto>.
 
  use MooseX::Barewords;
 
- has foo => (
-    is => 'ro',
-    isa => 'Str',
- );
+ has foo => ( is => 'ro' );
 
- bmethod my_method => sub {
+ sub my_method {
     print self->foo; # this will always return the attribute value
     print foo;       # will print whatever $self->foo holds
                      # unless 'foo' is set in argument list
- };
+ }
 
- bmethod add => sub {
+ sub add {
     print a + b;
- };
-
- bmethod add_nums => qw/a b/, sub {
-    print a + b;
- };
+ }
 
  # this will make 'foo' bareword return 42 instead of
  # what $self->foo holds.
@@ -39,67 +32,38 @@ This module has modified code from L<subs::auto>.
 
  # will print 43
  $self->add(a => 42, b => 1);
- $self->add_nums(42, 1);
 
 =cut
 
 use Moose ();
 use Moose::Exporter;
 use Moose::Util::MetaRole;
-use List::MoreUtils qw/zip/;
 use Symbol qw/gensym/;
 use Variable::Magic qw/wizard cast dispell getdata/;
 use constant DATA => 1;
 use constant FUNC => 2;
 
 our $VERSION = "0.01";
-our $_SELF;
-our %_ARGS;
 
 Moose::Exporter->setup_import_methods(
-    with_caller => [qw/has bmethod self/],
+    with_caller => [qw/has self/],
     also        => 'Moose',
 );
 
 =head1 FUNCTIONS
 
-=head2 bmethod
+=head2 self
 
- bmethod $name => sub { ... };
- bmethod $name => qw/foo bar/, sub { ... };
+ $self = self;
 
-This will create a method, which can use barewords to access either
-variables from parameter list or object attribute values.
-
-See L<SYNOPSIS> for details.
+Returns the current object in caller method.
 
 =cut
 
-sub bmethod {
-    my $class = shift;
-    my $name  = shift;
-    my $sub   = pop;
-    my @args  = @_;
-    my $meta  = $class->meta;
-
-    $class->meta->add_method($name => sub {
-        my $self = shift;
-        my $args;
-
-        if(@args) {
-            $args = { zip @args, @_ };
-        }
-        else {
-            $args = @_ == 1 ? $_[0] : {@_};
-        }
-
-        local %_ARGS;
-        local $_SELF = $self;
-
-        $_ARGS{$_} = $args->{$_} for keys %$args;
-
-        return $self->$sub(@_);
-    });
+sub self {
+    package DB;
+    () = caller(2); # set DB:: to work on the right level
+    return $DB::args[0];
 }
 
 =head2 has
@@ -132,41 +96,20 @@ sub has {
                 $options{'writer'} = $accessor;
             }
             if(!exists $options{'reader'}) {
-                $options{'reader'} ||= $accessor;
+                $options{'reader'} = $accessor;
             }
 
             no strict 'refs';
-            *{"$class\::$name"} = sub {
-                if(Scalar::Util::blessed($_[0])) {
-                    return shift->$accessor(@_);
-                }
-                else {
-                    return exists $_ARGS{$name} ? $_ARGS{$name}
-                         :                        $_SELF->$accessor;
-                }
-            };
+            *{"$class\::$name"} = sub { get_arg($name, @_ ? 1 : 2) };
         }
+        delete $options{'is'};
     }
-
-    delete $options{'is'};
 
     for(@$attrs) {
         Class::MOP::Class->initialize($class)->add_attribute( $_, %options );
     }
 
     return;
-}
-
-=head2 self
-
- $self = self;
-
-Will return the current object, inside a L<bmethod()>.
-
-=cut
-
-sub self {
-    return $_SELF;
 }
 
 =head2 init_meta
@@ -192,6 +135,40 @@ sub init_meta {
 }
 
 =head1 INTERNAL FUNCTIONS
+
+=head2 get_arg 
+
+ $value = get_arg($name, $level);
+
+Will return either the value from the argument list givent to the
+caller method, or the object attribute value in the current method.
+
+=cut
+
+sub get_arg {
+    my $name  = shift || '__UNDEF__';
+    my $level = shift || 1;
+
+    package DB;
+    
+    my @caller     = caller($level); # make DB:: work on the correct level
+    my($obj, @tmp) = @DB::args;
+    my $acc        = "__$name";
+    my $args       = ref $tmp[0] eq 'HASH' ? $tmp[0]
+                   : @tmp % 2 == 0         ? {@tmp}
+                   :                         {};
+
+    if(exists $args->{$name}) {
+        return $args->{$name};
+    }
+    elsif($obj and $obj->can($acc)) {
+        return $obj->$acc(@tmp);
+    }
+    else {
+        local $Carp::CarpLevel = $level; # skip stacktrace from this module
+        Carp::confess("'$name' is not defined");
+    }
+}
 
 =head2 init_wizard
 
@@ -230,10 +207,7 @@ sub init_wizard {
                     no strict 'refs';
                     my $fqn = $pkg . '::' . $func;
                     *$fqn{'CODE'} || *$fqn{'IO'} and return;
-                    my $cb = sub () {
-                        return $_ARGS{$func} if(exists $_ARGS{$func});
-                        Carp::confess "$func is not defined";
-                    };
+                    my $cb = sub () { get_arg($func, 2) };
                     cast &$cb, $tag;
                     *$fqn = $cb;
                 }
