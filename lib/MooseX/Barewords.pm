@@ -90,19 +90,15 @@ sub has {
     my $accessor = "__$name";
 
     if($options{'is'}) {
-        if(!exists $options{'reader'} or !exists $options{'writer'}) {
-
-            if(!exists $options{'writer'} and $options{'is'} eq 'rw') {
-                $options{'writer'} = $accessor;
-            }
-            if(!exists $options{'reader'}) {
-                $options{'reader'} = $accessor;
-            }
-
-            no strict 'refs';
-            *{"$class\::$name"} = sub { get_arg($name, @_ ? 1 : 2) };
+        if($options{'is'} eq 'rw') {
+            $options{'accessor'} = $accessor;
+        }
+        else {
+            $options{'reader'} = $accessor;
         }
         delete $options{'is'};
+        no strict 'refs';
+        *{"$class\::$name"} = sub { get_arg($name, @_ ? 1 : 2) };
     }
 
     for(@$attrs) {
