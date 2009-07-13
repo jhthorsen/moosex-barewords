@@ -2,11 +2,19 @@ package MooseX::Barewords;
 
 =head1 NAME
 
-MooseX::Barewords - Turn barewords into attr/arg getters
+MooseX::Barewords - Turn barewords into attribute/argument getters
 
 =head1 DESCRIPTION
 
-This module has modified code from L<subs::auto>.
+The idea is to make C<$self> look like an object and avoid shifting off
+arguments given to a method.
+
+This module is a proof of concept and will probably never be published
+on CPAN.
+
+=head1 SEE ALSO
+
+L<MooseX::Method::Signatures>, L<subs::auto>, L<self> and L<selfvars>.
 
 =head1 SYNOPSIS
 
@@ -20,6 +28,7 @@ This module has modified code from L<subs::auto>.
     print self->foo; # this will always return the attribute value
     print foo;       # will print whatever $self->foo holds
                      # unless 'foo' is set in argument list
+                     # should that be considered a bug or feature..? ;)
  }
 
  sub add {
@@ -30,8 +39,11 @@ This module has modified code from L<subs::auto>.
  # what $self->foo holds.
  $self->my_method(foo => 42); 
 
- # will print 43
- $self->add(a => 42, b => 1);
+ # will print 66
+ $self->add(a => 42, b => 24);
+
+ # will die since "a" and "b" are not given as arguments
+ $self->add(foo => 1);
 
 =cut
 
