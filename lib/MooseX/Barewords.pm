@@ -73,7 +73,10 @@ sub self {
 Same as L<Moose::has()>, but with some extra sugar to make barewords work
 as expected.
 
-Accessors will be prefixed with "__"
+Accessor will be prefixed with "__", but can still be accessed by C<$name>:
+
+ $acc = "__$name";
+ $self->$name eq $self->$acc; # true
 
 =cut
 
@@ -134,6 +137,13 @@ sub init_meta {
 
 =head2 get_attr
 
+ $value = get_attr($name, @args);
+
+Will return either the argument or attribute valued named C<$name>, or
+confess if no such arg/attr exists.
+
+Arguments will be prioritized over attributes names.
+
 =cut
 
 sub get_attr {
@@ -151,7 +161,9 @@ sub get_attr {
     }
 
     if(!$obj) {
-        $obj = _get_obj();
+        package DB;
+        ()   = caller($level - 1); # make DB:: work on the correct level
+        $obj = $DB::args[0];
     }
 
     if($obj and $obj->can($acc)) {
@@ -163,18 +175,12 @@ sub get_attr {
     }
 }
 
-sub _get_obj {
-    package DB;
-    () = caller(3); # make DB:: work on the correct level
-    return $DB::args[0];
-}
-
 =head2 get_arg 
 
  $value = get_arg($name, $level);
 
-Will return either the value from the argument list givent to the
-caller method, or the object attribute value in the current method.
+Will return the argument named C<$name> or confess if no such argument
+exists in caller method.
 
 =cut
 
@@ -183,12 +189,12 @@ sub get_arg {
     my $level = shift || 1;
 
     package DB;
- 
-    my @caller     = caller($level); # make DB:: work on the correct level
-    my($obj, @tmp) = @DB::args;
-    my $args       = ref $tmp[0] eq 'HASH' ? $tmp[0]
-                   : @tmp % 2 == 0         ? {@tmp}
-                   :                         {};
+    () = caller($level); # make DB:: work on the correct level
+
+    my @tmp  = @DB::args[1..@DB::args - 1];
+    my $args = ref $tmp[0] eq 'HASH' ? $tmp[0]
+             : @tmp % 2 == 0         ? {@tmp}
+             :                         {};
 
     if(exists $args->{$name}) {
         return $args->{$name};

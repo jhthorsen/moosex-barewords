@@ -40,7 +40,10 @@ FUNCTIONS
     Same as Moose::has(), but with some extra sugar to make barewords work
     as expected.
 
-    Accessors will be prefixed with "__"
+    Accessor will be prefixed with "__", but can still be accessed by $name:
+
+     $acc = "__$name";
+     $self->$name eq $self->$acc; # true
 
   init_meta
      $class->init_meta(%options);
@@ -50,11 +53,18 @@ FUNCTIONS
 
 INTERNAL FUNCTIONS
   get_attr
+     $value = get_attr($name, @args);
+
+    Will return either the argument or attribute valued named $name, or
+    confess if no such arg/attr exists.
+
+    Arguments will be prioritized over attributes names.
+
   get_arg
      $value = get_arg($name, $level);
 
-    Will return either the value from the argument list givent to the caller
-    method, or the object attribute value in the current method.
+    Will return the argument named $name or confess if no such argument
+    exists in caller method.
 
   init_wizard
      $wiz = init_wizard();
