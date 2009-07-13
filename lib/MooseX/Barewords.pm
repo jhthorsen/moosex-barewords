@@ -98,7 +98,7 @@ sub has {
         }
         delete $options{'is'};
         no strict 'refs';
-        *{"$class\::$name"} = sub { get_arg($name, @_ ? 1 : 2) };
+        *{"$class\::$name"} = sub { get_attr($name, @_) };
     }
 
     for(@$attrs) {
@@ -132,6 +132,43 @@ sub init_meta {
 
 =head1 INTERNAL FUNCTIONS
 
+=head2 get_attr
+
+=cut
+
+sub get_attr {
+    my $name  = shift || '__UNDEF__';
+    my @args  = @_;
+    my $acc   = "__$name";
+    my $level = 4;
+    my $obj;
+
+    if(@args) {
+        $obj = shift @args if(Scalar::Util::blessed($args[0]));
+    }
+    elsif(my $value = eval { get_arg($name, $level) }) {
+        return $value;
+    }
+
+    if(!$obj) {
+        $obj = _get_obj();
+    }
+
+    if($obj and $obj->can($acc)) {
+        return $obj->$acc(@args);
+    }
+    else {
+        local $Carp::CarpLevel = $level - 1; # skip stacktrace from this module
+        Carp::confess("'$name' attribute is not defined");
+    }
+}
+
+sub _get_obj {
+    package DB;
+    () = caller(3); # make DB:: work on the correct level
+    return $DB::args[0];
+}
+
 =head2 get_arg 
 
  $value = get_arg($name, $level);
@@ -146,19 +183,15 @@ sub get_arg {
     my $level = shift || 1;
 
     package DB;
-    
+ 
     my @caller     = caller($level); # make DB:: work on the correct level
     my($obj, @tmp) = @DB::args;
-    my $acc        = "__$name";
     my $args       = ref $tmp[0] eq 'HASH' ? $tmp[0]
                    : @tmp % 2 == 0         ? {@tmp}
                    :                         {};
 
     if(exists $args->{$name}) {
         return $args->{$name};
-    }
-    elsif($obj and $obj->can($acc)) {
-        return $obj->$acc(@tmp);
     }
     else {
         local $Carp::CarpLevel = $level; # skip stacktrace from this module
