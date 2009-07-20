@@ -1,7 +1,7 @@
 use inc::Module::Install;
 
-name     q(MooseX-MagicVar);
-all_from q(lib/MooseX/MagicVar.pm);
+name     q(MooseX-Barewords);
+all_from q(lib/MooseX/Barewords.pm);
 
 requires      q(Moose)            => 0.86;
 requires      q(Symbol)           => 0;
